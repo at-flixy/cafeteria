@@ -1,36 +1,86 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Cafeteria Pre-order System
 
-## Getting Started
+Локальный MVP системы предзаказа блюд для университетской столовой. Клиент выбирает блюда из опубликованного меню дня, резервирует тайм-слот, оплачивает онлайн через mock-провайдер или выбирает оплату на кассе. Кассир ищет заказ по номеру/QR/email, принимает оплату наличными и подтверждает выдачу.
 
-First, run the development server:
+Менеджер полностью редактирует справочник блюд, изображения, меню дня, стоп-лист, лимиты и расписание слотов, очередь кухни и отчёты. Все данные хранятся локально в SQLite, внешние сервисы не используются.
+
+## Стек
+
+- Next.js 14 App Router, TypeScript strict
+- Prisma ORM + SQLite
+- NextAuth Credentials + bcrypt
+- Tailwind CSS + shadcn/ui
+- Zod, react-hook-form, SWR/fetch
+- Recharts, qrcode, lucide-react, date-fns/ru
+
+## Быстрый старт
 
 ```bash
+git clone <repo-url>
+cd cafeteria-preorder
+npm run setup
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Откройте http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Сид-аккаунты
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Email | Пароль | Роль |
+|---|---|---|
+| client@demo | demo | Клиент |
+| cashier@demo | demo | Кассир |
+| manager@demo | demo | Менеджер |
 
-## Learn More
+## Сценарии для демонстрации
 
-To learn more about Next.js, take a look at the following resources:
+1. Войти как `client@demo`, открыть меню, добавить 2 блюда в корзину, перейти в checkout, выбрать слот и онлайн-оплату. После mock-обработки заказ появится в «Мои заказы» со статусом «Оплачен».
+2. Войти как клиент, создать заказ с оплатой «На кассе». Затем войти как `cashier@demo`, найти заказ по номеру, нажать «Принять оплату» и «Выдать заказ».
+3. Войти как клиент, создать заказ с оплатой на кассе и отменить его в «Мои заказы» до начала слота.
+4. Войти как `manager@demo`, открыть «Меню дня», поставить блюдо из активного заказа в стоп-лист. Клиент увидит уведомление.
+5. Войти как менеджер, открыть «Тайм-слоты», поставить лимит слота равным занятому количеству. Второй заказ сверх лимита вернёт ошибку «Слот заполнен, выберите другой».
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Дополнительно для демонстрации менеджера: открыть «Блюда», создать новое блюдо, загрузить изображение, изменить КБЖУ/аллергены/цену, затем открыть «Меню дня» и добавить это блюдо в сегодняшнее меню.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Структура проекта
 
-## Deploy on Vercel
+```text
+prisma/
+  schema.prisma
+  seed.ts
+src/
+  app/
+    (public)/login, (public)/register
+    (client)/, cart, checkout, orders, notifications
+    (cashier)/cashier
+    (manager)/manager
+    api/
+  components/
+    ui/
+    Header.tsx, DishCard.tsx, CartDrawer.tsx, SlotPicker.tsx
+  lib/
+    auth.ts, db.ts, orders.ts, validators.ts, reports.ts
+tests/
+  orders.test.ts
+public/dishes/
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Соответствие требованиям
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Блок | Реализация |
+|---|---|
+| BR: локальный MVP | SQLite, seed, mock-платежи, in-app уведомления |
+| UR: клиент | меню дня, корзина, checkout, оплата, отмена, QR, уведомления |
+| UR: кассир | поиск, принятие оплаты наличными, выдача |
+| UR: менеджер | CRUD блюд с изображениями, CRUD позиций меню, CRUD слотов, стоп-лист, очередь, отчёты |
+| FR-017/018 | `toggleStopList` + уведомления клиентам активных заказов |
+| FR-019 | `setSlotLimit` запрещает лимит ниже `reservedCount` |
+| FR-020 | `createOrder` возвращает `SlotFullError` при заполненном слоте |
+
+## Ограничения MVP
+
+- Онлайн-оплата имитируется локальным mock-провайдером с задержкой.
+- Уведомления только внутри приложения, без email/SMS/SMTP.
+- Нет Stripe, S3, production-БД и production-deploy.
+- Для SQLite цены и КБЖУ хранятся как `Float`, округление суммы делается в приложении.
+- Next.js 14.2 не поддерживает `next.config.ts`, поэтому используется `next.config.mjs`.

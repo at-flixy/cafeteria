@@ -9,6 +9,11 @@
 # testing
 /coverage
 
+# local sqlite and runtime uploads
+/prisma/prisma/
+/prisma/*.db
+/public/dishes/uploads/
+
 # next.js
 /.next/
 /out/
