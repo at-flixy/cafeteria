@@ -1,0 +1,394 @@
+ПРОМПТ ДЛЯ CODEX / CLAUDE CODE
+Cafeteria Pre-order System — локальный MVP
+==========================================================
+
+Скопируй всё, что ниже, и отдай Codex (или Claude Code) одним сообщением в пустой папке. Агент должен сгенерировать рабочий MVP за один заход, без вопросов.
+
+----------------------------------------------------------
+НАЧАЛО ПРОМПТА
+----------------------------------------------------------
+
+## Роль и цель
+
+Ты — senior full-stack инженер. Сгенерируй полностью рабочий локальный MVP веб-приложения «Cafeteria Pre-order System» (система предзаказа блюд в университетской столовой). MVP будет показан стейкхолдерам, поэтому он должен запускаться одной командой `npm run dev`, выглядеть аккуратно, иметь сид-данные и покрывать ключевые сценарии трёх ролей. Никаких внешних сервисов (Stripe, SMTP, S3, прод-БД) — всё локально.
+
+## Технический стек (обязательно)
+
+- Next.js 14 (App Router, RSC где уместно) + TypeScript (strict)
+- Prisma ORM с SQLite (`file:./prisma/dev.db`)
+- Tailwind CSS + shadcn/ui (Button, Card, Input, Dialog, Toast, Table, Badge, Tabs, Select, DropdownMenu, Sheet)
+- NextAuth (Credentials provider) + bcrypt для паролей
+- Zod для валидации DTO
+- react-hook-form для форм
+- Recharts для графиков отчётов
+- qrcode (npm) для генерации QR-кода заказа
+- lucide-react для иконок
+- date-fns + локаль `ru`
+- UI — на русском языке
+
+Никакого Redux/Zustand — состояние через серверные actions и useSWR (или fetch + revalidate).
+
+## Структура проекта
+
+```
+cafeteria-preorder/
+├─ prisma/
+│  ├─ schema.prisma
+│  ├─ seed.ts
+│  └─ dev.db (генерируется)
+├─ src/
+│  ├─ app/
+│  │  ├─ (public)/login/page.tsx
+│  │  ├─ (public)/register/page.tsx
+│  │  ├─ (client)/page.tsx                # меню дня
+│  │  ├─ (client)/cart/page.tsx
+│  │  ├─ (client)/checkout/page.tsx
+│  │  ├─ (client)/orders/page.tsx
+│  │  ├─ (client)/orders/[id]/page.tsx
+│  │  ├─ (client)/notifications/page.tsx
+│  │  ├─ (cashier)/cashier/page.tsx
+│  │  ├─ (cashier)/cashier/order/[id]/page.tsx
+│  │  ├─ (manager)/manager/page.tsx       # дашборд
+│  │  ├─ (manager)/manager/menu/page.tsx
+│  │  ├─ (manager)/manager/dishes/page.tsx
+│  │  ├─ (manager)/manager/slots/page.tsx
+│  │  ├─ (manager)/manager/queue/page.tsx
+│  │  ├─ (manager)/manager/reports/page.tsx
+│  │  ├─ api/auth/[...nextauth]/route.ts
+│  │  ├─ api/orders/route.ts              # POST create
+│  │  ├─ api/orders/[id]/cancel/route.ts
+│  │  ├─ api/orders/[id]/pay/route.ts     # mock pay
+│  │  ├─ api/orders/[id]/issue/route.ts   # cashier issue
+│  │  ├─ api/menu/today/route.ts
+│  │  ├─ api/manager/*                    # CRUD menu/dishes/slots, stop-list, reports
+│  │  ├─ layout.tsx
+│  │  └─ globals.css
+│  ├─ components/
+│  │  ├─ ui/...                           # shadcn
+│  │  ├─ Header.tsx
+│  │  ├─ DishCard.tsx
+│  │  ├─ CartDrawer.tsx
+│  │  ├─ SlotPicker.tsx
+│  │  ├─ OrderStatusBadge.tsx
+│  │  ├─ NotificationBell.tsx
+│  │  └─ RoleGuard.tsx
+│  ├─ lib/
+│  │  ├─ db.ts                            # PrismaClient singleton
+│  │  ├─ auth.ts                          # next-auth config
+│  │  ├─ rbac.ts                          # role helpers
+│  │  ├─ orders.ts                        # бизнес-логика: createOrder, cancelOrder, payOrder, issueOrder
+│  │  ├─ payments.ts                      # mock-провайдер
+│  │  ├─ notifications.ts
+│  │  ├─ audit.ts
+│  │  └─ validators.ts                    # zod schemas
+│  └─ middleware.ts                       # защита маршрутов по ролям
+├─ public/
+│  └─ dishes/...                          # 15-20 SVG/placeholder фото
+├─ .env                                   # DATABASE_URL, NEXTAUTH_SECRET, NEXTAUTH_URL
+├─ tailwind.config.ts
+├─ next.config.ts
+├─ package.json
+└─ README.md
+```
+
+## Prisma schema (минимум, обязательно эти модели)
+
+```prisma
+enum Role { CLIENT CASHIER MANAGER ADMIN }
+enum UserStatus { ACTIVE BLOCKED DELETED }
+enum MenuStatus { DRAFT PUBLISHED CLOSED }
+enum OrderStatus { CREATED PENDING_PAYMENT PAID READY ISSUED CANCELLED }
+enum PaymentMethod { ONLINE CASH STUDENT_CARD }
+enum PaymentStatus { PENDING SUCCESS FAILED REFUNDED }
+
+model User {
+  id            String   @id @default(cuid())
+  fullName      String
+  email         String   @unique
+  passwordHash  String
+  role          Role     @default(CLIENT)
+  status        UserStatus @default(ACTIVE)
+  createdAt     DateTime @default(now())
+  orders        Order[]  @relation("client_orders")
+  issuedOrders  Order[]  @relation("cashier_issued")
+  notifications Notification[]
+  audit         AuditLog[]
+}
+
+model Dish {
+  id          String @id @default(cuid())
+  name        String
+  description String?
+  price       Decimal @db.Decimal(10,2)
+  calories    Int     @default(0)
+  proteins_g  Decimal @default(0) @db.Decimal(6,2)
+  fats_g      Decimal @default(0) @db.Decimal(6,2)
+  carbs_g     Decimal @default(0) @db.Decimal(6,2)
+  allergens   String?
+  photoUrl    String?
+  createdAt   DateTime @default(now())
+  menuItems   MenuItem[]
+}
+
+model DailyMenu {
+  id          String @id @default(cuid())
+  menuDate    DateTime @unique
+  status      MenuStatus @default(DRAFT)
+  publishedAt DateTime?
+  items       MenuItem[]
+}
+
+model MenuItem {
+  id            String @id @default(cuid())
+  menuId        String
+  dishId        String
+  price         Decimal @db.Decimal(10,2)
+  availableQty  Int
+  reservedQty   Int    @default(0)
+  stopListFlag  Boolean @default(false)
+  menu          DailyMenu @relation(fields: [menuId], references: [id])
+  dish          Dish @relation(fields: [dishId], references: [id])
+  orderItems    OrderItem[]
+  @@unique([menuId, dishId])
+}
+
+model TimeSlot {
+  id            String @id @default(cuid())
+  slotDate      DateTime
+  startTime     String   // "12:00"
+  endTime       String   // "12:30"
+  orderLimit    Int
+  reservedCount Int      @default(0)
+  orders        Order[]
+  @@unique([slotDate, startTime])
+}
+
+model Order {
+  id            String @id @default(cuid())
+  orderNumber   String @unique
+  clientId      String
+  slotId        String
+  status        OrderStatus @default(CREATED)
+  totalAmount   Decimal @db.Decimal(10,2)
+  createdAt     DateTime @default(now())
+  issuedAt      DateTime?
+  issuedById    String?
+  client        User @relation("client_orders", fields: [clientId], references: [id])
+  cashier       User? @relation("cashier_issued", fields: [issuedById], references: [id])
+  slot          TimeSlot @relation(fields: [slotId], references: [id])
+  items         OrderItem[]
+  payment       Payment?
+}
+
+model OrderItem {
+  id          String @id @default(cuid())
+  orderId     String
+  menuItemId  String
+  quantity    Int
+  unitPrice   Decimal @db.Decimal(10,2)
+  order       Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem    MenuItem @relation(fields: [menuItemId], references: [id])
+}
+
+model Payment {
+  id          String @id @default(cuid())
+  orderId     String @unique
+  method      PaymentMethod
+  status      PaymentStatus @default(PENDING)
+  providerRef String?
+  paidAt      DateTime?
+  order       Order @relation(fields: [orderId], references: [id])
+}
+
+model Notification {
+  id        String @id @default(cuid())
+  userId    String
+  message   String
+  type      String
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User @relation(fields: [userId], references: [id])
+}
+
+model AuditLog {
+  id         String @id @default(cuid())
+  actorId    String
+  action     String
+  entity     String
+  entityId   String
+  payload    String?    // JSON-строка
+  createdAt  DateTime @default(now())
+  actor      User @relation(fields: [actorId], references: [id])
+}
+
+model ReportSnapshot {
+  id         String @id @default(cuid())
+  periodFrom DateTime
+  periodTo   DateTime
+  type       String     // DAILY | WEEKLY
+  payload    String     // JSON
+  createdAt  DateTime @default(now())
+}
+```
+
+Примечание: SQLite не поддерживает Decimal нативно — Prisma эмулирует. Если возникнут проблемы, замени Decimal на Float и округляй до 2 знаков на уровне приложения.
+
+## Сид-данные (`prisma/seed.ts`)
+
+Создать:
+- 3 пользователя (пароль `demo`, хэшировать bcrypt):
+  - client@demo — Алина Студентова, role=CLIENT
+  - cashier@demo — Иван Кассиров, role=CASHIER
+  - manager@demo — Мария Менеджерова, role=MANAGER
+- 15-20 блюд на русском с реалистичными КБЖУ и ценами (в сомах, для КГТУ). Примеры:
+  Лагман, Манты, Плов с говядиной, Бешбармак, Самса, Куурдак, Борщ, Окрошка, Греческий салат, Цезарь с курицей, Картофельное пюре, Котлета по-киевски, Гречка с грибами, Рыба запечённая, Компот из сухофруктов, Морс клюквенный, Пирожок с капустой, Чизкейк, Эчпочмак, Чай.
+- DailyMenu на сегодня в статусе PUBLISHED, все блюда включены, availableQty от 10 до 40.
+- 5 тайм-слотов на сегодня: 12:00-12:30, 12:30-13:00, 13:00-13:30, 13:30-14:00, 14:00-14:30, каждый orderLimit=10.
+- 1 пример заказа в статусе PAID на client@demo для демонстрации страницы «Мои заказы».
+
+Photo placeholder — генерируй цветные SVG с первой буквой названия (детерминированный цвет по hash имени), сохраняй в public/dishes/.
+
+## Бизнес-логика (`src/lib/orders.ts`)
+
+Реализовать как чистые функции, оборачивающие Prisma-транзакции.
+
+### createOrder(clientId, slotId, items: {menuItemId, quantity}[])
+Транзакция:
+1. Проверить, что у каждого menuItem: stopListFlag=false, availableQty - reservedQty >= quantity → иначе OutOfStockError.
+2. Проверить slot.reservedCount < slot.orderLimit → иначе SlotFullError (FR-020).
+3. Инкрементировать reservedQty для каждого menuItem и reservedCount слота на 1.
+4. Создать Order со статусом CREATED, сгенерировать orderNumber (например CP-{YYYYMMDD}-{6-значный random}).
+5. Создать OrderItem и подсчитать totalAmount.
+6. Создать Notification клиенту: «Заказ #{number} создан».
+7. Создать AuditLog action=`order_created`.
+8. Вернуть Order с items.
+
+### payOrder(orderId, method: 'ONLINE'|'CASH')
+- ONLINE: создать Payment{status=PENDING}, имитировать задержку 2 сек (await sleep(2000)), перевести в SUCCESS, Order.status=PAID. Уведомление «Оплата прошла».
+- CASH: создать Payment{status=PENDING}, Order.status=PENDING_PAYMENT. Уведомление «Оплатите на кассе при получении».
+
+### cancelOrder(orderId, actorId)
+- Запретить если status ∈ {PAID, READY, ISSUED, CANCELLED} или слот уже начался.
+- Декремент reservedQty и reservedCount, Order.status=CANCELLED.
+- Notification клиенту, AuditLog.
+
+### issueOrder(orderId, cashierId)
+- Если PENDING_PAYMENT — сначала разрешить кассиру вызвать markCashPaid (Payment.status=SUCCESS, Order.status=PAID).
+- Order.status=ISSUED, issuedAt=now, issuedById=cashierId.
+- Уменьшить availableQty на quantity для каждой позиции (фактическое списание).
+- AuditLog action=`order_issued`.
+
+### toggleStopList(menuItemId, value: boolean, actorId) (FR-017/018)
+- Установить stopListFlag=value.
+- Если true: найти все Order со статусом ∈ {CREATED, PENDING_PAYMENT, PAID} содержащие этот menuItem → создать Notification каждому клиенту: «Блюдо {name} временно недоступно, свяжитесь с кассой».
+- AuditLog action=`stop_list_toggled`.
+
+### setSlotLimit(slotId, newLimit, actorId) (FR-019)
+- Запретить newLimit < reservedCount.
+- AuditLog action=`slot_limit_changed`.
+
+## API endpoints (Next.js route handlers)
+
+Все защищены через NextAuth + RBAC. Возвращают JSON и используют zod для входов.
+
+| Метод | Путь | Роль | Назначение |
+|---|---|---|---|
+| GET | /api/menu/today | any | Опубликованное меню на сегодня + доступные слоты |
+| POST | /api/orders | CLIENT | Создать заказ |
+| GET | /api/orders/mine | CLIENT | Список заказов клиента |
+| POST | /api/orders/[id]/cancel | CLIENT (owner) | Отмена неоплаченного |
+| POST | /api/orders/[id]/pay | CLIENT (owner) | Mock-оплата |
+| GET | /api/cashier/search?q=... | CASHIER | Поиск по orderNumber/email/QR |
+| POST | /api/cashier/orders/[id]/cash-paid | CASHIER | Принять оплату наличными |
+| POST | /api/cashier/orders/[id]/issue | CASHIER | Подтвердить выдачу |
+| GET/POST/PUT/DELETE | /api/manager/dishes[/[id]] | MANAGER | CRUD блюд |
+| GET/POST/PUT | /api/manager/menu[/[id]] | MANAGER | DailyMenu |
+| POST | /api/manager/menu/items/[id]/stop | MANAGER | Toggle стоп-лист |
+| GET/POST/PUT/DELETE | /api/manager/slots[/[id]] | MANAGER | CRUD слотов |
+| GET | /api/manager/queue | MANAGER | Сводка по слотам на сегодня |
+| GET | /api/manager/reports?type=daily|weekly&date=... | MANAGER | Сформировать отчёт |
+| GET | /api/notifications | any | Уведомления текущего юзера |
+| POST | /api/notifications/[id]/read | any | Отметить прочитанным |
+
+## UI требования
+
+- shadcn/ui компоненты, опрятная сетка, mobile-first.
+- Header с лого «🍽 Cafeteria Pre-order», именем пользователя, ролью (бейдж), колоколом уведомлений (бейдж с числом непрочитанных), выходом.
+- Меню дня — карточки 3 в ряд на desktop / 1 на mobile: фото-плейсхолдер, название, описание, КБЖУ, аллергены (badge), цена, доступные порции, кнопка «+ в корзину» с QtyPicker.
+- Корзина — Sheet/Drawer справа: список позиций, изменение количества, итог, кнопка «Оформить».
+- Checkout — выбор слота (карточки с временем и оставшимися местами), выбор оплаты (radio: онлайн / на кассе), кнопка «Подтвердить».
+- При онлайн-оплате: модалка «Обработка платежа…» со спиннером 2 сек, потом «Оплата прошла ✓» с переходом на /orders.
+- Мои заказы — таблица/карточки со статусом (badge с цветом), временем слота, кнопками «Отменить» (для CREATED/PENDING_PAYMENT) и «Показать QR».
+- QR-код — генерится из orderNumber, отображается на странице заказа.
+- Кассир — большое поле поиска, список найденных заказов, при клике — детали с большими кнопками «Принять оплату» (если PENDING_PAYMENT) и «Выдать заказ».
+- Менеджер → Меню — DataTable блюд меню дня с inline-редактированием цены/количества, переключатель стоп-листа, кнопка «Опубликовать».
+- Менеджер → Очередь — карточки слотов по горизонтали, в каждой — таблица «Блюдо × количество порций».
+- Менеджер → Отчёты — Recharts: bar chart топ-блюд, line chart выручки по дням, donut chart загрузки слотов.
+
+Цветовая схема: бежевый / тёплые акценты (amber, orange) — еда. Tailwind preset с custom colors. Тёмная тема не обязательна.
+Иконки: lucide-react (UtensilsCrossed, ShoppingCart, Clock, QrCode, ChefHat, BarChart3, Bell).
+
+## Безопасность и RBAC
+
+- middleware.ts блокирует доступ к /manager/* для не-MANAGER, к /cashier/* для не-CASHIER, к /orders/* только для авторизованных.
+- В API — обёртка requireRole(['MANAGER']) бросающая 403.
+- Пароли — bcrypt 10 раундов.
+- NEXTAUTH_SECRET в .env.
+- Не возвращать passwordHash ни в одном ответе.
+
+## Acceptance tests (минимум, vitest)
+
+1. client@demo логинится, видит меню, добавляет 2 позиции в корзину, выбирает слот, оформляет онлайн-оплату → заказ становится PAID, reservedQty/reservedCount корректно увеличены.
+2. client@demo создаёт заказ с оплатой на кассе → статус PENDING_PAYMENT. Затем cashier@demo находит по orderNumber, принимает оплату → PAID, выдаёт → ISSUED, availableQty уменьшен.
+3. client@demo отменяет неоплаченный заказ → CANCELLED, reservedQty/reservedCount возвращены.
+4. manager@demo ставит стоп-лист на блюдо, у которого есть активный заказ → клиент получает Notification.
+5. Менеджер задаёт orderLimit=1 для слота, 2-й клиент пытается оформить → ошибка SlotFullError, UI показывает «Слот заполнен, выберите другой».
+
+## Скрипты npm
+
+```json
+{
+  "dev": "next dev",
+  "build": "next build",
+  "start": "next start",
+  "db:push": "prisma db push",
+  "db:seed": "tsx prisma/seed.ts",
+  "db:reset": "prisma db push --force-reset && npm run db:seed",
+  "setup": "npm install && prisma generate && prisma db push && npm run db:seed",
+  "test": "vitest"
+}
+```
+
+## Содержимое .env
+
+```
+DATABASE_URL="file:./prisma/dev.db"
+NEXTAUTH_SECRET="local-demo-secret-change-me"
+NEXTAUTH_URL="http://localhost:3000"
+```
+
+## README.md (на русском)
+
+Разделы:
+1. Описание продукта (2-3 абзаца).
+2. Стек.
+3. Быстрый старт: git clone … && cd cafeteria-preorder && npm run setup && npm run dev.
+4. Сид-аккаунты (таблица email / пароль / роль).
+5. Сценарии для демонстрации (5 пунктов из Acceptance tests, step-by-step).
+6. Структура проекта.
+7. Соответствие требованиям BR/UR/FR (короткая таблица).
+8. Ограничения MVP: mock-платежи, in-app уведомления, без email, без production-deploy.
+
+## Финальные требования
+
+1. После `npm run setup` приложение поднимается на http://localhost:3000 без ошибок.
+2. Никаких TODO, placeholder-страниц, console.error в нормальных сценариях.
+3. TypeScript strict, без any (кроме оправданных мест), `npm run build` проходит.
+4. Если что-то непонятно — выбирай разумный вариант, документируй решение в README.
+5. В конце выведи итоговый список созданных файлов и команду запуска.
+
+Поехали — создавай проект одним заходом, без вопросов.
+
+----------------------------------------------------------
+КОНЕЦ ПРОМПТА
+----------------------------------------------------------

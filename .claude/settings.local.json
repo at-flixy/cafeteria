@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"console.log\\(require.resolve\\('docx'\\)\\)\")",
+      "Bash(npm root *)",
+      "Bash(npm install *)",
+      "Bash(node -e \"console.log\\(require.resolve\\('docx', {paths:['C:\\\\\\\\\\\\\\\\Users\\\\\\\\\\\\\\\\Lenovo\\\\\\\\\\\\\\\\AppData\\\\\\\\\\\\\\\\Roaming\\\\\\\\\\\\\\\\npm\\\\\\\\\\\\\\\\node_modules']}\\)\\)\")",
+      "Bash(ls \"C:/Users/Lenovo/AppData/Roaming/npm/node_modules/docx\" 2>&1 | head -5)",
+      "Read(//c/Users/Lenovo/Desktop//**)",
+      "Bash(xargs wc -l)"
+    ]
+  }
+}
