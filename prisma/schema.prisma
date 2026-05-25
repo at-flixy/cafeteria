@@ -1,0 +1,180 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CLIENT
+  CASHIER
+  MANAGER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+  DELETED
+}
+
+enum MenuStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
+enum OrderStatus {
+  CREATED
+  PENDING_PAYMENT
+  PAID
+  READY
+  ISSUED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  ONLINE
+  CASH
+  STUDENT_CARD
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+model User {
+  id            String         @id @default(cuid())
+  fullName      String
+  email         String         @unique
+  passwordHash  String
+  role          Role           @default(CLIENT)
+  status        UserStatus     @default(ACTIVE)
+  createdAt     DateTime       @default(now())
+  orders        Order[]        @relation("client_orders")
+  issuedOrders  Order[]        @relation("cashier_issued")
+  notifications Notification[]
+  audit         AuditLog[]
+}
+
+model Dish {
+  id          String     @id @default(cuid())
+  name        String
+  description String?
+  price       Float
+  calories    Int        @default(0)
+  proteins_g  Float      @default(0)
+  fats_g      Float      @default(0)
+  carbs_g     Float      @default(0)
+  allergens   String?
+  photoUrl    String?
+  createdAt   DateTime   @default(now())
+  menuItems   MenuItem[]
+}
+
+model DailyMenu {
+  id          String     @id @default(cuid())
+  menuDate    DateTime   @unique
+  status      MenuStatus @default(DRAFT)
+  publishedAt DateTime?
+  items       MenuItem[]
+}
+
+model MenuItem {
+  id           String      @id @default(cuid())
+  menuId       String
+  dishId       String
+  price        Float
+  availableQty Int
+  reservedQty  Int         @default(0)
+  stopListFlag Boolean     @default(false)
+  menu         DailyMenu   @relation(fields: [menuId], references: [id])
+  dish         Dish        @relation(fields: [dishId], references: [id])
+  orderItems   OrderItem[]
+
+  @@unique([menuId, dishId])
+}
+
+model TimeSlot {
+  id            String   @id @default(cuid())
+  slotDate      DateTime
+  startTime     String
+  endTime       String
+  orderLimit    Int
+  reservedCount Int      @default(0)
+  orders        Order[]
+
+  @@unique([slotDate, startTime])
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  orderNumber String      @unique
+  clientId    String
+  slotId      String
+  status      OrderStatus @default(CREATED)
+  totalAmount Float
+  createdAt   DateTime    @default(now())
+  issuedAt    DateTime?
+  issuedById  String?
+  client      User        @relation("client_orders", fields: [clientId], references: [id])
+  cashier     User?       @relation("cashier_issued", fields: [issuedById], references: [id])
+  slot        TimeSlot    @relation(fields: [slotId], references: [id])
+  items       OrderItem[]
+  payment     Payment?
+}
+
+model OrderItem {
+  id         String   @id @default(cuid())
+  orderId    String
+  menuItemId String
+  quantity   Int
+  unitPrice  Float
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  orderId     String        @unique
+  method      PaymentMethod
+  status      PaymentStatus @default(PENDING)
+  providerRef String?
+  paidAt      DateTime?
+  order       Order         @relation(fields: [orderId], references: [id])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  message   String
+  type      String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String
+  action    String
+  entity    String
+  entityId  String
+  payload   String?
+  createdAt DateTime @default(now())
+  actor     User     @relation(fields: [actorId], references: [id])
+}
+
+model ReportSnapshot {
+  id         String   @id @default(cuid())
+  periodFrom DateTime
+  periodTo   DateTime
+  type       String
+  payload    String
+  createdAt  DateTime @default(now())
+}
